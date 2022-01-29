@@ -23,7 +23,16 @@ post_item = {
     'fastapi': {
         'title': 'fastapi',
         'body': 'nice',
-        'good': 0}
+        'good': 0,
+        'post_comment': {
+            '我觉得可以': '有一说一，我觉得可以',
+            '我觉得不行': '有一说一，我觉得不行'}
+        },
+    'jsy': {
+        'title': 'jsy',
+        'body': 'good',
+        'good': 0,
+        }
 }
 
 
@@ -45,12 +54,12 @@ def check_login(userid: int):
         raise HTTPException(status_code=233, detail='请登录')
 
 
-@app.get('/')
+@app.get('/')  # 首页
 async def root():
     return 'Welcome!'
 
 
-@app.post('/login')
+@app.post('/login')  # 登录
 async def login(user: User):
     if user.id in acc:
         if acc[user.id]['login'] == 1:
@@ -66,7 +75,7 @@ async def login(user: User):
         return '无此账号'
 
 
-@app.post('/{userid}logout')
+@app.post('/{userid}logout')  # 登出
 async def logout(userid: int):
     if userid in acc:
         if acc[userid]['login'] == 1:
@@ -78,7 +87,7 @@ async def logout(userid: int):
         return '无此账号'
 
 
-@app.post('/register')
+@app.post('/register')  # 注册
 async def register(user: User):
     if user.id in acc:
         return '账号已存在'
@@ -88,7 +97,7 @@ async def register(user: User):
         return '注册成功'
 
 
-@app.post('/post')
+@app.post('/post')  # 发帖
 async def post_in(userid: int, post: Post):
     if check_login(userid):
         post_item[post.title] = {'title': post.title, 'body': post.body, 'good': 0}
@@ -96,13 +105,21 @@ async def post_in(userid: int, post: Post):
         return '发帖成功'
 
 
-@app.get('/post/{post_title}')
-async def post_add(post_title: str):
+@app.get('/post/{post_title}')  # 获取帖子信息
+async def post_get(post_title: str):
     if post_title in post_item:
-        return post_item[post_title]['body'], '点赞数:%s' % post_item[post_title]['good']
+        return post_item[post_title]['body'], '点赞数:%s' % post_item[post_title]['good'], '评论：', \
+               post_comment_get(post_title)
 
 
-@app.delete('/users/{id}')
+def post_comment_get(post_title: str):  # 获取评论
+    if 'post_comment' in post_item[post_title]:
+        return post_item[post_title]['post_comment']
+    else:
+        return '还没有评论哦'
+
+
+@app.delete('/users/{id}')  # 删除账户
 def delete_user(userid: int):
     if check_login(userid):
         if userid in acc:
@@ -112,7 +129,7 @@ def delete_user(userid: int):
             raise HTTPException(status_code=404, detail="账号不存在")
 
 
-@app.put('/users/{id}')
+@app.put('/users/{id}')  # 修改账户名字或密码
 def update_pw(userid: int, name: Optional[str] = None, pw: Optional[int] = None):
     if check_login(userid):
         if userid in acc:
@@ -126,7 +143,7 @@ def update_pw(userid: int, name: Optional[str] = None, pw: Optional[int] = None)
             raise HTTPException(status_code=404, detail="账号不存在")
 
 
-@app.post('/post/{post_title}/good')
+@app.post('/post/{post_title}/good')  # 帖子点赞
 async def post_good(userid: int, post_title: str):
     if check_login(userid):
         if post_title in post_item:
@@ -134,7 +151,7 @@ async def post_good(userid: int, post_title: str):
             return '点赞成功，当前点赞数：%s' % post_item[post_title]['good']
 
 
-@app.delete('/post/{post_title}')
+@app.delete('/post/{post_title}')  # 删帖子
 async def post_del(userid: int, post_title: str):
     if check_login(userid):
         if post_title in post_item:
@@ -142,6 +159,15 @@ async def post_del(userid: int, post_title: str):
             return '已完成'
         else:
             raise HTTPException(status_code=404, detail='无此贴')
+
+
+@app.post('/post/{post_title}/{post_comment}')  # 跟帖评论
+def post_comment(userid: int, post_title: str, post_comment_title: str, post_comment_body: str):
+    if check_login(userid):
+        if post_title in post_item:
+            post_item[post_title]['post_comment'] = {post_comment_title: post_comment_body}
+            print(post_item[post_title]['post_comment'])
+            return '评论成功'
 
 
 if __name__ == '__main__':
