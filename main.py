@@ -25,12 +25,12 @@ post_item = {
         'post_comment': {
             '我觉得可以': '有一说一，我觉得可以',
             '我觉得不行': '有一说一，我觉得不行'}
-        },
+    },
     'jsy': {
         'title': 'jsy',
         'body': 'good',
         'good': 0,
-        }
+    }
 }
 
 
@@ -140,7 +140,7 @@ def update_pw(userid: int, name: Optional[str] = None, pw: Optional[int] = None)
 async def post_good(userid: int, post_title: str):
     if check_login(userid):
         if post_title in post_item:
-            post_item[post_title]['good'] = post_item[post_title]['good'] + 1
+            post_item[post_title]['good'] += 1
             return '点赞成功，当前点赞数：%s' % post_item[post_title]['good']
 
 
