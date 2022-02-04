@@ -1,4 +1,6 @@
+from datetime import datetime, timedelta
 from typing import Optional
+
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Cookie, Response, Header, Request
@@ -34,6 +36,7 @@ post_item = {
 }
 
 
+
 class User(BaseModel):
     id: int
     name: Optional[str] = None
@@ -51,29 +54,28 @@ async def root():
 
 
 @app.post('/login')  # 登录
-async def login(user: User, response: Response):
-    if user.id in acc:
-        print(user)
-        if user.pw == acc[user.id]['pw']:
-            await set_cookie(response, acc[user.id]['name'])
-            return '登陆成功'
-        else:
-            return '密码错误'
+async def login(user: User, response: Response, is_login:Optional[str] = Cookie(None)):
+    if is_login == acc[user.id]['name']:
+        return '已登录'
     else:
-        return '无此账号'
+        if user.id in acc:
+            print(user)
+            if user.pw == acc[user.id]['pw']:
+                response.set_cookie(key='is_login', value=acc[user.id]['name'])
+                return '登陆成功'
+            else:
+                return '密码错误'
+        else:
+            return '无此账号'
 
-
-async def set_cookie(response: Response, user_name):
-    response.set_cookie(key=user_name, value='login')
-    return {'message': 'welcome'}
 
 
 @app.post('/{userid}logout')  # 登出
-async def logout(userid: int):
+async def logout(response: Response,userid: int, is_login: Optional[str] = Cookie(None)):
     if userid in acc:
-        if acc[userid]['login'] == 1:
-            acc[userid]['login'] = 0
-            return '已退出登录,登陆码login=%s' % acc[userid]['login']
+        if is_login == acc[userid]['name']:
+            response.set_cookie(key='is_login', value='None')
+            return '已退出登录'
         else:
             return '未登录'
     else:
