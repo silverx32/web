@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
-
 import uvicorn
-from fastapi import FastAPI, HTTPException, Cookie, Response, Header, Request
+from fastapi import FastAPI, HTTPException, Cookie, Response, BackgroundTasks, Request, Form
 from pydantic import BaseModel
+from starlette.responses import JSONResponse
 
 app = FastAPI()
 
@@ -36,11 +36,11 @@ post_item = {
 }
 
 
-
-class User(BaseModel):
+class Items(BaseModel):
     id: int
-    name: Optional[str] = None
-    pw: int
+    len: float
+    creater: Optional[str] = None
+    size: Optional[bytes] = None
 
 
 class Post(BaseModel):
@@ -48,20 +48,55 @@ class Post(BaseModel):
     body: str
 
 
+class NoLogin(Exception): ...
+
+
+@app.exception_handler(NoLogin)
+async def unicorn_exception(*args, **kwargs):
+    return JSONResponse(
+        status_code=233,
+        content={'注意': '未登录'}
+    )
+
+
+# 登录cookie校验
+def cookie_check(r: Request):
+    if r.cookies.get('is_login') == 'quest' or r.cookies.get('is_login') is None:
+        raise NoLogin()
+    else:
+        return True
+
+
 @app.get('/')  # 首页
 async def root():
     return 'Welcome!'
 
 
+# 中间件，分配一个cookie：quest
+@app.middleware('http')
+async def cookie_add(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path != '/login' and request.url.path != '/register':
+        re = request.cookies.get('is_login')
+        if re is None:
+            def quest(rsp: Response):
+                rsp.set_cookie(key='is_login', value='quest')
+            quest(response)
+    return response
+
+
 @app.post('/login')  # 登录
-async def login(user: User, response: Response, is_login:Optional[str] = Cookie(None)):
-    if is_login == acc[user.id]['name']:
+def login(
+        response: Response,
+        userid: int = Form(...),
+        password: int = Form(...),
+        is_login: Optional[str] = Cookie(None)):
+    if is_login == acc[userid]['name']:
         return '已登录'
     else:
-        if user.id in acc:
-            print(user)
-            if user.pw == acc[user.id]['pw']:
-                response.set_cookie(key='is_login', value=acc[user.id]['name'])
+        if userid in acc:
+            if password == acc[userid]['pw']:
+                response.set_cookie(key='is_login', value=acc[userid]['name'])
                 return '登陆成功'
             else:
                 return '密码错误'
@@ -69,12 +104,14 @@ async def login(user: User, response: Response, is_login:Optional[str] = Cookie(
             return '无此账号'
 
 
-
 @app.post('/{userid}logout')  # 登出
-async def logout(response: Response,userid: int, is_login: Optional[str] = Cookie(None)):
+async def logout(
+        response: Response,
+        userid: int,
+        is_login: Optional[str] = Cookie(None)):
     if userid in acc:
         if is_login == acc[userid]['name']:
-            response.set_cookie(key='is_login', value='None')
+            response.set_cookie(key='is_login', value='quest')
             return '已退出登录'
         else:
             return '未登录'
@@ -83,20 +120,28 @@ async def logout(response: Response,userid: int, is_login: Optional[str] = Cooki
 
 
 @app.post('/register')  # 注册
-async def register(user: User):
-    if user.id in acc:
+async def register(
+        response:Response,
+        userid: int = Form(...),
+        password: int = Form(...),
+        username: str = Form(...)):
+    if userid in acc:
         return '账号已存在'
     else:
-        acc[user.id] = {'name': user.name, 'pw': user.pw, 'level': 1, 'login': 0}
-        print(acc)
+        acc[userid] = {'name': username, 'pw': password, 'level': 1}
+        response.set_cookie(key='is_login', value=acc[userid]['name'])
+        print(acc[userid])
         return '注册成功'
 
 
 @app.post('/post')  # 发帖
-async def post_in(userid: int, post: Post):
-    if check_login(userid):
-        post_item[post.title] = {'title': post.title, 'body': post.body, 'good': 0}
-        print(post_item[post.title])
+async def post_in(
+        request: Request,
+        post_title: str = Form(...),
+        post_body: str = Form(...), ):
+    if cookie_check(request):
+        post_item[post_title] = {'title': post_title, 'body': post_body, 'good': 0}
+        print(post_item[post_title])
         return '发帖成功'
 
 
@@ -105,6 +150,8 @@ async def post_get(post_title: str):
     if post_title in post_item:
         return post_item[post_title]['body'], '点赞数:%s' % post_item[post_title]['good'], '评论：', \
                post_comment_get(post_title)
+    else:
+        raise HTTPException(status_code=404, detail='你所访问的页面不存在')
 
 
 def post_comment_get(post_title: str):  # 获取评论
@@ -115,18 +162,24 @@ def post_comment_get(post_title: str):  # 获取评论
 
 
 @app.delete('/users/{id}')  # 删除账户
-def delete_user(userid: int):
-    if check_login(userid):
+def delete_user(
+        userid: int,
+        r: Request):
+    if cookie_check(r):
         if userid in acc:
             del acc[userid]
             return '已完成'
         else:
-            raise HTTPException(status_code=404, detail="账号不存在")
+            raise HTTPException(status_code=303, detail="账号不存在")
 
 
 @app.put('/users/{id}')  # 修改账户名字或密码
-def update_pw(userid: int, name: Optional[str] = None, pw: Optional[int] = None):
-    if check_login(userid):
+def update_pw(
+        userid: int,
+        r: Request,
+        name: Optional[str] = None,
+        pw: Optional[int] = None):
+    if cookie_check(r):
         if userid in acc:
             if name is not None:
                 acc[userid]['name'] = name
@@ -135,20 +188,24 @@ def update_pw(userid: int, name: Optional[str] = None, pw: Optional[int] = None)
             print(acc)
             return '已完成'
         else:
-            raise HTTPException(status_code=404, detail="账号不存在")
+            raise HTTPException(status_code=500, detail="账号不存在")
 
 
 @app.post('/post/{post_title}/good')  # 帖子点赞
-async def post_good(userid: int, post_title: str):
-    if check_login(userid):
+async def post_good(
+        post_title: str,
+        r: Request):
+    if cookie_check(r):
         if post_title in post_item:
             post_item[post_title]['good'] += 1
             return '点赞成功，当前点赞数：%s' % post_item[post_title]['good']
 
 
 @app.delete('/post/{post_title}')  # 删帖子
-async def post_del(userid: int, post_title: str):
-    if check_login(userid):
+async def post_del(
+        post_title: str,
+        r: Request):
+    if cookie_check(r):
         if post_title in post_item:
             del post_item[post_title]
             return '已完成'
@@ -157,19 +214,16 @@ async def post_del(userid: int, post_title: str):
 
 
 @app.post('/post/{post_title}/{post_comment}')  # 跟帖评论
-def post_comment(userid: int, post_title: str, post_comment_title: str, post_comment_body: str):
-    if check_login(userid):
+def post_comment(
+        r: Request,
+        post_title: str,
+        post_comment_title: str,
+        post_comment_body: str):
+    if cookie_check(r):
         if post_title in post_item:
             post_item[post_title]['post_comment'] = {post_comment_title: post_comment_body}
             print(post_item[post_title]['post_comment'])
             return '评论成功'
-
-
-def check_login(userid: int):
-    if userid in acc and acc[userid]['login'] == 1:
-        return True
-    else:
-        raise HTTPException(status_code=233, detail='请登录')
 
 
 if __name__ == '__main__':
